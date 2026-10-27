@@ -81,7 +81,7 @@ public final class LollyEngineBridgeController: NSObject, ObservableObject, WKSc
 
         switch type {
         case "raceStart":
-            HapticsAndAudioEngine.shared.playCountdownGo()
+            HapticsAndAudioEngine.shared.playCountdownTick(finalGo: true)
             if let map = body["map"] as? String {
                 profile?.selectedCircuitId = map
             }
@@ -92,16 +92,16 @@ public final class LollyEngineBridgeController: NSObject, ObservableObject, WKSc
         case "popup":
             let kind = (body["kind"] as? String) ?? ""
             if kind == "boost" || kind == "drift" {
-                HapticsAndAudioEngine.shared.playTurboBoost()
+                HapticsAndAudioEngine.shared.playBoostBurst()
             } else {
                 HapticsAndAudioEngine.shared.playItemPickup()
             }
 
         case "hurt":
-            HapticsAndAudioEngine.shared.playWallImpact()
+            HapticsAndAudioEngine.shared.playDriftTierUp(tier: 3)
 
         case "raceEnd":
-            HapticsAndAudioEngine.shared.playLapComplete(isFinal: true)
+            HapticsAndAudioEngine.shared.playLapComplete(isFinalLap: true)
             let place = (body["place"] as? Int) ?? 1
             let clock = (body["clock"] as? Double) ?? 95.0
             let bestLap = (body["bestLap"] as? Double) ?? (clock / 3.0)
@@ -181,23 +181,32 @@ public final class LollyEngineBridgeController: NSObject, ObservableObject, WKSc
             let p = Double(i) / Double(count)
             let wave = sin(p * .pi * 6.0) * 18.0 + cos(p * .pi * 4.0) * 11.0
             let speed = max(92.0, min(238.0, 178.0 + wave + Double(driftBoosts) * 1.6))
-            let tier = (i % 5 == 0 && driftBoosts > 0) ? min(3, (i % 3) + 1) : 0
-            samples.append(TelemetryPoint(normalizedDistance: p, speedKmh: speed, lateralG: abs(sin(p * .pi * 4.0)) * 1.4, driftTier: tier))
+            let proSpeed = max(105.0, min(242.0, 184.0 + wave * 0.85))
+            samples.append(
+                TelemetryPoint(
+                    sampleIndex: i,
+                    distanceNormalized: p,
+                    speedKmh: speed,
+                    proReferenceKmh: proSpeed,
+                    driftAngleDeg: abs(sin(p * .pi * 4.0)) * 22.0
+                )
+            )
         }
 
-        let avgSpeed = samples.map(\.speedKmh).reduce(0, +) / Double(samples.count)
         let topSpeed = samples.map(\.speedKmh).max() ?? 215.0
 
         let rec = LapTelemetryRecord(
+            id: UUID(),
             circuitId: circuit.id,
             driverId: profile.selectedDriverId,
-            lapTimeSeconds: validBest,
+            timestamp: Date(),
+            totalTimeSeconds: totalTime,
+            bestLapSeconds: validBest,
             sector1Seconds: s1,
             sector2Seconds: s2,
             sector3Seconds: s3,
-            topSpeedKmh: topSpeed,
-            averageSpeedKmh: avgSpeed,
-            driftBoostCount: max(1, driftBoosts),
+            peakSpeedKmh: topSpeed,
+            miniTurboCount: max(1, driftBoosts),
             finishPosition: place,
             samples: samples
         )

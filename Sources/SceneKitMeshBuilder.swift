@@ -37,12 +37,15 @@ public final class TrackSpline {
                 let t = Float(step) / Float(subdivisionsPerSegment)
                 let t2 = t * t
                 let t3 = t2 * t
-                let pos = 0.5 * (
-                    (2.0 * p1) +
-                    (-p0 + p2) * t +
-                    (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2 +
-                    (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3
-                )
+                let c0: SIMD3<Float> = 2.0 * p1
+                let c1: SIMD3<Float> = (-p0 + p2) * t
+                let c2a: SIMD3<Float> = 2.0 * p0 - 5.0 * p1
+                let c2b: SIMD3<Float> = 4.0 * p2 - p3
+                let c2: SIMD3<Float> = (c2a + c2b) * t2
+                let c3a: SIMD3<Float> = -p0 + 3.0 * p1
+                let c3b: SIMD3<Float> = -3.0 * p2 + p3
+                let c3: SIMD3<Float> = (c3a + c3b) * t3
+                let pos: SIMD3<Float> = 0.5 * (c0 + c1 + c2 + c3)
                 pts.append(pos)
             }
         }

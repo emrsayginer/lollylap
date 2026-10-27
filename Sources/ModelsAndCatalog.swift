@@ -258,7 +258,23 @@ public struct KartLoadout: Codable, Equatable {
     public var suspensionStiffness: Double = 0.65 // 0 = soft, 1 = sharp drift initiation
     public var driftBoostMix: Double = 0.70       // 0 = long duration, 1 = explosive burst
 
-    public init() {}
+    public init(
+        paintId: String = "candy_pink",
+        rimId: String = "aero_gold",
+        wingId: String = "gt_swan",
+        finalDriveRatio: Double = 0.55,
+        aeroDownforce: Double = 0.60,
+        suspensionStiffness: Double = 0.65,
+        driftBoostMix: Double = 0.70
+    ) {
+        self.paintId = paintId
+        self.rimId = rimId
+        self.wingId = wingId
+        self.finalDriveRatio = finalDriveRatio
+        self.aeroDownforce = aeroDownforce
+        self.suspensionStiffness = suspensionStiffness
+        self.driftBoostMix = driftBoostMix
+    }
 }
 
 // MARK: - Career Mode & Telemetry Models
