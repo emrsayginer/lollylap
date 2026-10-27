@@ -166,19 +166,26 @@ public struct RootContainerView: View {
     @ObservedObject public var profile: PlayerProfileState
     @ObservedObject public var store: StoreKitClubManager
 
+    @StateObject private var bridge = LollyEngineBridgeController()
     @State private var selectedTab: HubTab = .race
     @State private var showPaywall: Bool = false
     @State private var activeRaceEngine: RaceSimulationEngine? = nil
     @State private var activeCareerEventId: String? = nil
 
     public var body: some View {
-        ZStack {
+        ZStack(alignment: .topLeading) {
             LinearGradient(
                 colors: [Color(red: 0.05, green: 0.06, blue: 0.14), Color(red: 0.14, green: 0.05, blue: 0.24)],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
             .ignoresSafeArea()
+
+            // Always keep the original Lolly Lap 3D engine alive in the background so graphics/state never reset
+            OriginalLollyLap3DView(bridge: bridge)
+                .ignoresSafeArea()
+                .opacity(selectedTab == .race && activeRaceEngine == nil ? 1.0 : 0.0)
+                .allowsHitTesting(selectedTab == .race && activeRaceEngine == nil)
 
             if let engine = activeRaceEngine {
                 Active3DRaceScreenView(
@@ -199,7 +206,7 @@ public struct RootContainerView: View {
                         activeRaceEngine = nil
                     }
                 )
-            } else {
+            } else if selectedTab != .race {
                 VStack(spacing: 0) {
                     topNavigationBar
                     Divider().background(Color.white.opacity(0.15))
@@ -207,15 +214,16 @@ public struct RootContainerView: View {
                     Group {
                         switch selectedTab {
                         case .race:
-                            quickRaceSetupView
+                            EmptyView()
                         case .career:
                             CareerCampaignView(
                                 language: profile.language,
                                 completedStars: profile.completedCareerStars,
                                 isVipUnlocked: store.isVipActive,
                                 onLaunchEvent: { ev in
-                                    let circuit = GameCatalog.circuits.first(where: { $0.id == ev.circuitId }) ?? GameCatalog.circuits[0]
-                                    launchRace(circuit: circuit, driver: profile.currentDriver, laps: ev.laps, careerEventId: ev.id)
+                                    activeCareerEventId = ev.id
+                                    selectedTab = .race
+                                    bridge.launchRaceInOriginalEngine(circuitId: ev.circuitId, laps: ev.laps)
                                 },
                                 onOpenPaywall: { showPaywall = true }
                             )
@@ -231,14 +239,42 @@ public struct RootContainerView: View {
                             TelemetryLabView(language: profile.language, records: profile.telemetryRecords)
                         case .academy:
                             DriverAcademyView(language: profile.language) { circuitId in
-                                let c = GameCatalog.circuits.first(where: { $0.id == circuitId }) ?? GameCatalog.circuits[0]
-                                launchRace(circuit: c, driver: profile.currentDriver, laps: 2, careerEventId: nil)
+                                selectedTab = .race
+                                bridge.launchRaceInOriginalEngine(circuitId: circuitId, laps: 3)
                             }
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
+            } else {
+                // Sleek floating Native Pro Studio pill in top-left corner over the original 3D game
+                Button {
+                    HapticsAndAudioEngine.shared.playDriftTierUp(tier: 1)
+                    selectedTab = .garage
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "wrench.and.screwdriver.fill")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.yellow)
+                        Text(profile.language == .tr ? "3B Garaj & Telemetri" : "3D Garage & Telemetry")
+                            .font(.system(size: 12, weight: .black, design: .rounded))
+                            .foregroundColor(.white)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(Color.black.opacity(0.62))
+                    .clipShape(Capsule())
+                    .overlay(Capsule().stroke(Color.white.opacity(0.24), lineWidth: 1))
+                }
+                .padding(.top, 12)
+                .padding(.leading, 14)
             }
+        }
+        .onAppear {
+            bridge.profile = profile
+            bridge.store = store
+            bridge.onOpenPaywall = { showPaywall = true }
+            bridge.onOpenProStudio = { selectedTab = .garage }
         }
         .sheet(isPresented: $showPaywall) {
             PaywallSheetView(language: profile.language, store: store)
@@ -247,16 +283,8 @@ public struct RootContainerView: View {
 
     private func launchRace(circuit: CircuitSpec, driver: CritterDriverSpec, laps: Int, careerEventId: String?) {
         activeCareerEventId = careerEventId
-        let eng = RaceSimulationEngine(
-            circuit: circuit,
-            driver: driver,
-            loadout: profile.loadout,
-            laps: laps,
-            difficulty: profile.selectedDifficulty,
-            controlMode: profile.controlMode
-        )
-        activeRaceEngine = eng
-        eng.startLoop()
+        selectedTab = .race
+        bridge.launchRaceInOriginalEngine(circuitId: circuit.id, laps: laps)
     }
 
     // MARK: - Top Navigation Bar
