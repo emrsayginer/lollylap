@@ -247,27 +247,30 @@ public struct RootContainerView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             } else {
-                // Sleek floating Native Pro Studio pill in top-left corner over the original 3D game
-                Button {
-                    HapticsAndAudioEngine.shared.playDriftTierUp(tier: 1)
-                    selectedTab = .garage
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "wrench.and.screwdriver.fill")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundColor(.yellow)
-                        Text(profile.language == .tr ? "3B Garaj & Telemetri" : "3D Garage & Telemetry")
-                            .font(.system(size: 12, weight: .black, design: .rounded))
-                            .foregroundColor(.white)
+                // Sleek floating Native Pro Studio pill centered at top so it never overlaps LOLLY LAP brand
+                HStack {
+                    Spacer()
+                    Button {
+                        HapticsAndAudioEngine.shared.playDriftTierUp(tier: 1)
+                        selectedTab = .career
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "trophy.fill")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(.yellow)
+                            Text(profile.language == .tr ? "Kariyer • 3B Garaj • Telemetri" : "Career • 3D Garage • Telemetry")
+                                .font(.system(size: 11.5, weight: .black, design: .rounded))
+                                .foregroundColor(.white)
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 7)
+                        .background(Color.black.opacity(0.66))
+                        .clipShape(Capsule())
+                        .overlay(Capsule().stroke(Color.cyan.opacity(0.45), lineWidth: 1))
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background(Color.black.opacity(0.62))
-                    .clipShape(Capsule())
-                    .overlay(Capsule().stroke(Color.white.opacity(0.24), lineWidth: 1))
+                    Spacer()
                 }
                 .padding(.top, 12)
-                .padding(.leading, 14)
             }
         }
         .onAppear {

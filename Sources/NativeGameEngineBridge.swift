@@ -112,6 +112,20 @@ public final class LollyEngineBridgeController: NSObject, ObservableObject, WKSc
         case "openVipModal":
             HapticsAndAudioEngine.shared.playDriftTierUp(tier: 1)
 
+        case "restoreVipPurchases":
+            if let store = store {
+                Task {
+                    await store.restorePurchases()
+                    if store.isVipActive {
+                        syncVipToEngine(isVip: true)
+                    } else {
+                        onOpenPaywall?()
+                    }
+                }
+            } else {
+                onOpenPaywall?()
+            }
+
         case "purchaseVipPlan":
             let plan = (body["plan"] as? String) ?? "annual"
             if let store = store {
