@@ -172,6 +172,15 @@ public final class PlayerProfileState: ObservableObject {
         if let savedLang = UserDefaults.standard.string(forKey: "lollylap.lang"),
            let parsed = AppLanguage(rawValue: savedLang) {
             self.language = parsed
+        } else {
+            let region = Locale.current.region?.identifier.uppercased() ?? ""
+            let langCode = Locale.current.language.languageCode?.identifier.lowercased() ?? ""
+            let tz = TimeZone.current.identifier
+            if region == "TR" || langCode == "tr" || tz == "Europe/Istanbul" || tz == "Asia/Istanbul" {
+                self.language = .tr
+            } else {
+                self.language = .en
+            }
         }
         if let data = UserDefaults.standard.data(forKey: "lollylap.loadout"),
            let decoded = try? JSONDecoder().decode(KartLoadout.self, from: data) {
@@ -312,31 +321,31 @@ public struct RootContainerView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-            } else {
-                // Sleek floating Native Pro Studio pill centered at top so it never overlaps LOLLY LAP brand
+            } else if !bridge.isInActiveRace {
+                // Sleek floating Native Pro Studio pill centered at top so it never overlaps LOLLY LAP brand or race HUD
                 HStack {
                     Spacer()
                     Button {
                         HapticsAndAudioEngine.shared.playDriftTierUp(tier: 1)
                         selectedTab = .career
                     } label: {
-                        HStack(spacing: 6) {
+                        HStack(spacing: 5) {
                             Image(systemName: "trophy.fill")
-                                .font(.system(size: 11, weight: .bold))
+                                .font(.system(size: 9.5, weight: .bold))
                                 .foregroundColor(.yellow)
                             Text(profile.language == .tr ? "Kariyer • 3B Garaj • Telemetri" : "Career • 3D Garage • Telemetry")
-                                .font(.system(size: 11.5, weight: .black, design: .rounded))
+                                .font(.system(size: 10, weight: .bold, design: .rounded))
                                 .foregroundColor(.white)
                         }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 7)
-                        .background(Color.black.opacity(0.66))
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 5)
+                        .background(Color.black.opacity(0.62))
                         .clipShape(Capsule())
                         .overlay(Capsule().stroke(Color.cyan.opacity(0.45), lineWidth: 1))
                     }
                     Spacer()
                 }
-                .padding(.top, 12)
+                .padding(.top, 10)
             }
         }
         .onAppear {
@@ -964,77 +973,79 @@ public struct PaywallSheetView: View {
         ZStack {
             Color(red: 0.07, green: 0.05, blue: 0.16).ignoresSafeArea()
 
-            VStack(spacing: 14) {
-                HStack {
-                    Text(L10n.t("vip.badge", language))
-                        .font(.system(size: 11, weight: .black, design: .monospaced))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(Color.yellow.opacity(0.2))
-                        .foregroundColor(.yellow)
-                        .clipShape(Capsule())
-                    Spacer()
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 24))
-                            .foregroundColor(.gray)
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(spacing: 12) {
+                    HStack {
+                        Text(L10n.t("vip.badge", language))
+                            .font(.system(size: 10, weight: .black, design: .monospaced))
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 4)
+                            .background(Color.yellow.opacity(0.2))
+                            .foregroundColor(.yellow)
+                            .clipShape(Capsule())
+                        Spacer()
+                        Button {
+                            dismiss()
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 22))
+                                .foregroundColor(.gray)
+                        }
                     }
-                }
 
-                Text(L10n.t("vip.title", language))
-                    .font(.system(size: 22, weight: .black, design: .rounded))
-                    .foregroundColor(.white)
-                    .multilineTextAlignment(.center)
-
-                Text(L10n.t("vip.subtitle", language))
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
-                    .foregroundColor(Color(white: 0.75))
-
-                HStack(spacing: 12) {
-                    planCard(id: "com.lollylap.game.vip.monthly", title: "1 MONTH", price: "$4.99 / mo", sub: "7-Day Free Trial")
-                    planCard(id: "com.lollylap.game.vip.quarterly", title: "3 MONTHS", price: "$4.49 / mo", sub: "$13.47 every 3 mo")
-                    planCard(id: "com.lollylap.game.vip.annual", title: "12 MONTHS", price: "$3.99 / mo", sub: "$47.88 / yr • BEST")
-                }
-
-                Button {
-                    Task { await store.purchaseSelectedPlan() }
-                } label: {
-                    Text(store.isLoading ? "..." : L10n.t("vip.startTrial", language))
-                        .font(.system(size: 16, weight: .black, design: .rounded))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 13)
-                        .background(LinearGradient(colors: [.pink, .orange], startPoint: .leading, endPoint: .trailing))
+                    Text(L10n.t("vip.title", language))
+                        .font(.system(size: 18, weight: .black, design: .rounded))
                         .foregroundColor(.white)
-                        .clipShape(Capsule())
-                }
-
-                if !store.statusMessageKey.isEmpty {
-                    Text(L10n.t(store.statusMessageKey, language))
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundColor(store.isVipActive ? .green : .yellow)
                         .multilineTextAlignment(.center)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Color.white.opacity(0.08))
-                        .clipShape(Capsule())
-                }
 
-                HStack(spacing: 16) {
-                    Button(L10n.t("vip.restore", language)) {
-                        Task { await store.restorePurchases() }
+                    Text(L10n.t("vip.subtitle", language))
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundColor(Color(white: 0.75))
+
+                    HStack(spacing: 10) {
+                        planCard(id: "com.lollylap.game.vip.monthly", title: "1 MONTH", price: "$4.99 / mo", sub: "7-Day Free Trial")
+                        planCard(id: "com.lollylap.game.vip.quarterly", title: "3 MONTHS", price: "$4.49 / mo", sub: "$13.47 every 3 mo")
+                        planCard(id: "com.lollylap.game.vip.annual", title: "12 MONTHS", price: "$3.99 / mo", sub: "$47.88 / yr • BEST")
                     }
-                    Button(L10n.t("vip.manageCancel", language)) {
-                        Task { await store.manageSubscriptions() }
+
+                    Button {
+                        Task { await store.purchaseSelectedPlan() }
+                    } label: {
+                        Text(store.isLoading ? "..." : L10n.t("vip.startTrial", language))
+                            .font(.system(size: 14, weight: .black, design: .rounded))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 11)
+                            .background(LinearGradient(colors: [.pink, .orange], startPoint: .leading, endPoint: .trailing))
+                            .foregroundColor(.white)
+                            .clipShape(Capsule())
                     }
-                    Link("Privacy Policy", destination: URL(string: "https://lollylap.com/#privacy")!)
-                    Link("Terms of Use (EULA)", destination: URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!)
+
+                    if !store.statusMessageKey.isEmpty {
+                        Text(L10n.t(store.statusMessageKey, language))
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundColor(store.isVipActive ? .green : .yellow)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Color.white.opacity(0.08))
+                            .clipShape(Capsule())
+                    }
+
+                    HStack(spacing: 14) {
+                        Button(L10n.t("vip.restore", language)) {
+                            Task { await store.restorePurchases() }
+                        }
+                        Button(L10n.t("vip.manageCancel", language)) {
+                            Task { await store.manageSubscriptions() }
+                        }
+                        Link("Privacy Policy", destination: URL(string: "https://lollylap.com/#privacy")!)
+                        Link("Terms of Use (EULA)", destination: URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!)
+                    }
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.cyan)
                 }
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(.cyan)
+                .padding(16)
             }
-            .padding(22)
         }
     }
 

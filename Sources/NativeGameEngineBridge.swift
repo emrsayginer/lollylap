@@ -30,7 +30,7 @@ public final class LollyBundleSchemeHandler: NSObject, WKURLSchemeHandler {
         let headers: [String: String] = [
             "Content-Type": mime,
             "Content-Length": "\(data.count)",
-            "Cache-Control": "public, max-age=31536000, immutable",
+            "Cache-Control": "no-store, no-cache, must-revalidate",
             "Access-Control-Allow-Origin": "*"
         ]
         let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: headers)!
@@ -68,6 +68,7 @@ public final class LollyBundleSchemeHandler: NSObject, WKURLSchemeHandler {
 
 @MainActor
 public final class LollyEngineBridgeController: NSObject, ObservableObject, WKScriptMessageHandler, WKNavigationDelegate {
+    @Published public var isInActiveRace: Bool = false
     public weak var webView: WKWebView?
     public weak var profile: PlayerProfileState?
     public weak var store: StoreKitClubManager?
@@ -81,6 +82,7 @@ public final class LollyEngineBridgeController: NSObject, ObservableObject, WKSc
 
         switch type {
         case "raceStart":
+            isInActiveRace = true
             HapticsAndAudioEngine.shared.playCountdownTick(finalGo: true)
             if let map = body["map"] as? String {
                 profile?.selectedCircuitId = map
@@ -88,6 +90,9 @@ public final class LollyEngineBridgeController: NSObject, ObservableObject, WKSc
             if let laps = body["laps"] as? Int {
                 profile?.selectedLaps = laps
             }
+
+        case "quitToTitle":
+            isInActiveRace = false
 
         case "popup":
             let kind = (body["kind"] as? String) ?? ""
@@ -101,6 +106,7 @@ public final class LollyEngineBridgeController: NSObject, ObservableObject, WKSc
             HapticsAndAudioEngine.shared.playDriftTierUp(tier: 3)
 
         case "raceEnd":
+            isInActiveRace = false
             HapticsAndAudioEngine.shared.playLapComplete(isFinalLap: true)
             let place = (body["place"] as? Int) ?? 1
             let clock = (body["clock"] as? Double) ?? 95.0
@@ -172,6 +178,7 @@ public final class LollyEngineBridgeController: NSObject, ObservableObject, WKSc
     }
 
     public func launchRaceInOriginalEngine(circuitId: String, laps: Int) {
+        isInActiveRace = true
         let safeMap = circuitId.replacingOccurrences(of: "'", with: "")
         let clampedLaps = [2, 3, 5, 7].contains(laps) ? laps : 3
         let js = """
@@ -297,8 +304,19 @@ public struct OriginalLollyLap3DView: UIViewRepresentable {
         wv.navigationDelegate = bridge
 
         bridge.webView = wv
-        if let startURL = URL(string: "lollylap://app/index.html") {
-            wv.load(URLRequest(url: startURL))
+        let buildVer = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "21"
+        let cacheTypes: Set<String> = [
+            WKWebsiteDataTypeDiskCache,
+            WKWebsiteDataTypeMemoryCache,
+            WKWebsiteDataTypeFetchCache,
+            WKWebsiteDataTypeOfflineWebApplicationCache
+        ]
+        WKWebsiteDataStore.default().removeData(ofTypes: cacheTypes, modifiedSince: .distantPast) {
+            if let startURL = URL(string: "lollylap://app/index.html?v=\(buildVer)") {
+                var req = URLRequest(url: startURL)
+                req.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+                wv.load(req)
+            }
         }
         return wv
     }

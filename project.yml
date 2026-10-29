@@ -2,6 +2,9 @@ name: LollyLap
 options:
   bundleIdPrefix: com.lollylap
   developmentLanguage: en
+  knownRegions:
+    - en
+    - tr
   deploymentTarget:
     iOS: "16.4"
   createIntermediateGroups: true
