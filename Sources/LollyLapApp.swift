@@ -4,6 +4,15 @@ import Charts
 
 // MARK: - Native StoreKit 2 Subscription Manager
 
+public enum StoreKitOutcome: String {
+    case idle
+    case checking
+    case activated
+    case cancelled
+    case restored
+    case restoreEmpty
+}
+
 @MainActor
 public final class StoreKitClubManager: ObservableObject {
     public static let productIds: [String] = [
@@ -16,13 +25,28 @@ public final class StoreKitClubManager: ObservableObject {
     @Published public var products: [Product] = []
     @Published public var selectedPlanId: String = "com.lollylap.game.vip.annual"
     @Published public var isLoading: Bool = false
-    @Published public var statusMessage: String = ""
+    @Published public var statusMessageKey: String = ""
+    @Published public var lastOutcome: StoreKitOutcome = .idle
+
+    private var updatesTask: Task<Void, Never>? = nil
 
     public init() {
+        updatesTask = Task { [weak self] in
+            for await result in Transaction.updates {
+                if case .verified(let tx) = result {
+                    await tx.finish()
+                    await self?.refreshEntitlements()
+                }
+            }
+        }
         Task {
             await loadProducts()
             await refreshEntitlements()
         }
+    }
+
+    deinit {
+        updatesTask?.cancel()
     }
 
     public func loadProducts() async {
@@ -36,7 +60,8 @@ public final class StoreKitClubManager: ObservableObject {
 
     public func purchaseSelectedPlan() async {
         isLoading = true
-        statusMessage = ""
+        lastOutcome = .checking
+        statusMessageKey = "vip.status.checking"
         defer { isLoading = false }
 
         do {
@@ -44,7 +69,8 @@ public final class StoreKitClubManager: ObservableObject {
                 await loadProducts()
             }
             guard let product = products.first(where: { $0.id == selectedPlanId }) ?? products.first else {
-                statusMessage = "Connecting to App Store..."
+                lastOutcome = .cancelled
+                statusMessageKey = "vip.status.cancelled"
                 return
             }
             let result = try await product.purchase()
@@ -54,31 +80,71 @@ public final class StoreKitClubManager: ObservableObject {
                     await tx.finish()
                     isVipActive = true
                     UserDefaults.standard.set(true, forKey: "lollylap.vip.active")
+                    lastOutcome = .activated
+                    statusMessageKey = "vip.status.activated"
+                } else {
+                    lastOutcome = .cancelled
+                    statusMessageKey = "vip.status.cancelled"
                 }
-            default:
-                break
+            case .userCancelled:
+                lastOutcome = .cancelled
+                statusMessageKey = "vip.status.cancelled"
+            case .pending:
+                lastOutcome = .checking
+                statusMessageKey = "vip.status.checking"
+            @unknown default:
+                lastOutcome = .cancelled
+                statusMessageKey = "vip.status.cancelled"
             }
         } catch {
-            statusMessage = error.localizedDescription
+            lastOutcome = .cancelled
+            statusMessageKey = "vip.status.cancelled"
         }
     }
 
     public func restorePurchases() async {
         isLoading = true
+        lastOutcome = .checking
+        statusMessageKey = "vip.status.checking"
         defer { isLoading = false }
         try? await AppStore.sync()
         await refreshEntitlements()
+        if isVipActive {
+            lastOutcome = .restored
+            statusMessageKey = "vip.status.restored"
+        } else {
+            lastOutcome = .restoreEmpty
+            statusMessageKey = "vip.status.restoreEmpty"
+        }
+    }
+
+    public func manageSubscriptions() async {
+        if let scene = UIApplication.shared.connectedScenes.first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene {
+            do {
+                try await AppStore.showManageSubscriptions(in: scene)
+                await refreshEntitlements()
+                return
+            } catch {}
+        }
+        if let url = URL(string: "https://apps.apple.com/account/subscriptions") {
+            await UIApplication.shared.open(url)
+        }
     }
 
     public func refreshEntitlements() async {
+        var foundActive = false
+        let now = Date()
         for await res in Transaction.currentEntitlements {
-            if case .verified(let tx) = res, Self.productIds.contains(tx.productID) {
-                isVipActive = true
-                UserDefaults.standard.set(true, forKey: "lollylap.vip.active")
-                return
+            if case .verified(let tx) = res,
+               Self.productIds.contains(tx.productID),
+               tx.revocationDate == nil,
+               (tx.expirationDate == nil || tx.expirationDate! > now) {
+                foundActive = true
+                break
             }
         }
-        isVipActive = UserDefaults.standard.bool(forKey: "lollylap.vip.active")
+        isVipActive = foundActive
+        UserDefaults.standard.set(foundActive, forKey: "lollylap.vip.active")
     }
 }
 
@@ -944,9 +1010,23 @@ public struct PaywallSheetView: View {
                         .clipShape(Capsule())
                 }
 
-                HStack(spacing: 20) {
+                if !store.statusMessageKey.isEmpty {
+                    Text(L10n.t(store.statusMessageKey, language))
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundColor(store.isVipActive ? .green : .yellow)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color.white.opacity(0.08))
+                        .clipShape(Capsule())
+                }
+
+                HStack(spacing: 16) {
                     Button(L10n.t("vip.restore", language)) {
                         Task { await store.restorePurchases() }
+                    }
+                    Button(L10n.t("vip.manageCancel", language)) {
+                        Task { await store.manageSubscriptions() }
                     }
                     Link("Privacy Policy", destination: URL(string: "https://lollylap.com/#privacy")!)
                     Link("Terms of Use (EULA)", destination: URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!)

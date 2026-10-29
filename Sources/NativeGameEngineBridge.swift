@@ -112,18 +112,28 @@ public final class LollyEngineBridgeController: NSObject, ObservableObject, WKSc
         case "openVipModal":
             HapticsAndAudioEngine.shared.playDriftTierUp(tier: 1)
 
+        case "selectVipPlan":
+            let plan = (body["plan"] as? String) ?? "annual"
+            if let store = store {
+                switch plan {
+                case "monthly":
+                    store.selectedPlanId = "com.lollylap.game.vip.monthly"
+                case "quarterly":
+                    store.selectedPlanId = "com.lollylap.game.vip.quarterly"
+                default:
+                    store.selectedPlanId = "com.lollylap.game.vip.annual"
+                }
+            }
+
         case "restoreVipPurchases":
             if let store = store {
                 Task {
+                    syncVipStatusToEngine(state: "checking", isVip: store.isVipActive)
                     await store.restorePurchases()
-                    if store.isVipActive {
-                        syncVipToEngine(isVip: true)
-                    } else {
-                        onOpenPaywall?()
-                    }
+                    syncVipStatusToEngine(state: store.lastOutcome.rawValue, isVip: store.isVipActive)
                 }
             } else {
-                onOpenPaywall?()
+                syncVipStatusToEngine(state: "restoreEmpty", isVip: false)
             }
 
         case "purchaseVipPlan":
@@ -138,15 +148,22 @@ public final class LollyEngineBridgeController: NSObject, ObservableObject, WKSc
                     store.selectedPlanId = "com.lollylap.game.vip.annual"
                 }
                 Task {
+                    syncVipStatusToEngine(state: "checking", isVip: store.isVipActive)
                     await store.purchaseSelectedPlan()
-                    if store.isVipActive {
-                        syncVipToEngine(isVip: true)
-                    } else {
-                        onOpenPaywall?()
-                    }
+                    syncVipStatusToEngine(state: store.lastOutcome.rawValue, isVip: store.isVipActive)
                 }
             } else {
-                onOpenPaywall?()
+                syncVipStatusToEngine(state: "cancelled", isVip: false)
+            }
+
+        case "manageVipSubscriptions":
+            if let store = store {
+                Task {
+                    await store.manageSubscriptions()
+                    syncVipStatusToEngine(state: store.isVipActive ? "activated" : "cancelled", isVip: store.isVipActive)
+                }
+            } else {
+                syncVipStatusToEngine(state: "cancelled", isVip: false)
             }
 
         default:
@@ -177,7 +194,17 @@ public final class LollyEngineBridgeController: NSObject, ObservableObject, WKSc
     }
 
     public func syncVipToEngine(isVip: Bool) {
-        let js = "try { localStorage.setItem('lollylap:vip', '\(isVip ? "1" : "0")'); } catch(e) {}"
+        syncVipStatusToEngine(state: isVip ? "activated" : "idle", isVip: isVip)
+    }
+
+    public func syncVipStatusToEngine(state: String, isVip: Bool) {
+        let safeState = state.replacingOccurrences(of: "'", with: "")
+        let js = """
+        try {
+          localStorage.setItem('lollylap:vip', '\(isVip ? "1" : "0")');
+          window.dispatchEvent(new CustomEvent('vip:status', { detail: { state: '\(safeState)', isVip: \(isVip ? "true" : "false") } }));
+        } catch(e) {}
+        """
         webView?.evaluateJavaScript(js, completionHandler: nil)
     }
 
