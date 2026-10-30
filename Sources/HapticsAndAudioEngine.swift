@@ -37,8 +37,22 @@ public final class HapticsAndAudioEngine: ObservableObject {
     private func setupAudio() {
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.ambient, mode: .default, options: [.mixWithOthers])
+            try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
             try session.setActive(true)
+
+            NotificationCenter.default.addObserver(
+                forName: AVAudioSession.interruptionNotification,
+                object: session,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in
+                    try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
+                    try? AVAudioSession.sharedInstance().setActive(true)
+                    if let self = self, !self.audioEngine.isRunning {
+                        try? self.audioEngine.start()
+                    }
+                }
+            }
 
             let format = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 1)!
             self.audioFormat = format

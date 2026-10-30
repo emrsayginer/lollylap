@@ -321,38 +321,13 @@ public struct RootContainerView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-            } else if !bridge.isInActiveRace {
-                // Sleek floating Native Pro Studio pill centered at top so it never overlaps LOLLY LAP brand or race HUD
-                HStack {
-                    Spacer()
-                    Button {
-                        HapticsAndAudioEngine.shared.playDriftTierUp(tier: 1)
-                        selectedTab = .career
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "trophy.fill")
-                                .font(.system(size: 9.5, weight: .bold))
-                                .foregroundColor(.yellow)
-                            Text(profile.language == .tr ? "Kariyer • 3B Garaj • Telemetri" : "Career • 3D Garage • Telemetry")
-                                .font(.system(size: 10, weight: .bold, design: .rounded))
-                                .foregroundColor(.white)
-                        }
-                        .padding(.horizontal, 11)
-                        .padding(.vertical, 5)
-                        .background(Color.black.opacity(0.62))
-                        .clipShape(Capsule())
-                        .overlay(Capsule().stroke(Color.cyan.opacity(0.45), lineWidth: 1))
-                    }
-                    Spacer()
-                }
-                .padding(.top, 10)
             }
         }
         .onAppear {
             bridge.profile = profile
             bridge.store = store
             bridge.onOpenPaywall = { showPaywall = true }
-            bridge.onOpenProStudio = { selectedTab = .garage }
+            bridge.onOpenProStudio = { selectedTab = .career }
         }
         .sheet(isPresented: $showPaywall) {
             PaywallSheetView(language: profile.language, store: store)

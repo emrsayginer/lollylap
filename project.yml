@@ -5,6 +5,16 @@ options:
   knownRegions:
     - en
     - tr
+    - es
+    - de
+    - fr
+    - pt
+    - ru
+    - ja
+    - ko
+    - ar
+    - it
+    - zh-Hans
   deploymentTarget:
     iOS: "16.4"
   createIntermediateGroups: true
