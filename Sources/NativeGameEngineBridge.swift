@@ -55,6 +55,9 @@ public final class LollyBundleSchemeHandler: NSObject, WKURLSchemeHandler {
         case "glb": return "model/gltf-binary"
         case "woff2": return "font/woff2"
         case "ttf": return "font/ttf"
+        case "mp3": return "audio/mpeg"
+        case "ogg": return "audio/ogg"
+        case "wav": return "audio/wav"
         default:
             if let utType = UTType(filenameExtension: ext), let m = utType.preferredMIMEType {
                 return m
