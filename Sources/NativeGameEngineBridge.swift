@@ -172,6 +172,25 @@ public final class LollyEngineBridgeController: NSObject, ObservableObject, WKSc
                 syncVipStatusToEngine(state: "cancelled", isVip: false)
             }
 
+        case "musicState":
+            let track = (body["track"] as? String) ?? "candy"
+            let volume: Float
+            if let dVol = body["volume"] as? Double {
+                volume = Float(dVol)
+            } else if let nVol = body["volume"] as? NSNumber {
+                volume = nVol.floatValue
+            } else {
+                volume = 0.85
+            }
+            let muted = (body["muted"] as? Bool) ?? false
+            let playing = (body["playing"] as? Bool) ?? true
+            HapticsAndAudioEngine.shared.updateMusicPlayback(
+                track: track,
+                volume: volume,
+                muted: muted,
+                playing: playing
+            )
+
         default:
             break
         }
@@ -292,6 +311,13 @@ public struct OriginalLollyLap3DView: UIViewRepresentable {
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
         config.defaultWebpagePreferences.allowsContentJavaScript = true
+        config.userContentController.addUserScript(
+            WKUserScript(
+                source: "window.__lollyNativeMusicActive = true;",
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: false
+            )
+        )
         config.userContentController.add(bridge, name: "lollyBridge")
 
         let wv = WKWebView(frame: .zero, configuration: config)
