@@ -84,9 +84,40 @@ public final class LollyEngineBridgeController: NSObject, ObservableObject, WKSc
               let type = body["type"] as? String else { return }
 
         switch type {
+        case "sfx":
+            let name = (body["name"] as? String) ?? "ui"
+            let sfxVol: Float?
+            if let d = body["sfxVolume"] as? Double {
+                sfxVol = Float(d)
+            } else if let n = body["sfxVolume"] as? NSNumber {
+                sfxVol = n.floatValue
+            } else {
+                sfxVol = nil
+            }
+            let muted = body["muted"] as? Bool
+            HapticsAndAudioEngine.shared.playSfx(name: name, sfxVolume: sfxVol, muted: muted)
+
+        case "engineState":
+            let speedRatio: Float
+            if let d = body["speedRatio"] as? Double {
+                speedRatio = Float(d)
+            } else if let n = body["speedRatio"] as? NSNumber {
+                speedRatio = n.floatValue
+            } else {
+                speedRatio = 0.0
+            }
+            let driftTier = (body["driftTier"] as? Int) ?? 0
+            let boosting = (body["boosting"] as? Bool) ?? false
+            let active = (body["active"] as? Bool) ?? false
+            HapticsAndAudioEngine.shared.updateEngineSound(
+                speedRatio: speedRatio,
+                driftTier: driftTier,
+                boosting: boosting,
+                active: active
+            )
+
         case "raceStart":
             isInActiveRace = true
-            HapticsAndAudioEngine.shared.playCountdownTick(finalGo: true)
             if let map = body["map"] as? String {
                 profile?.selectedCircuitId = map
             }
@@ -96,21 +127,17 @@ public final class LollyEngineBridgeController: NSObject, ObservableObject, WKSc
 
         case "quitToTitle":
             isInActiveRace = false
+            HapticsAndAudioEngine.shared.updateEngineSound(speedRatio: 0, driftTier: 0, boosting: false, active: false)
 
         case "popup":
-            let kind = (body["kind"] as? String) ?? ""
-            if kind == "boost" || kind == "drift" {
-                HapticsAndAudioEngine.shared.playBoostBurst()
-            } else {
-                HapticsAndAudioEngine.shared.playItemPickup()
-            }
+            break
 
         case "hurt":
-            HapticsAndAudioEngine.shared.playDriftTierUp(tier: 3)
+            break
 
         case "raceEnd":
             isInActiveRace = false
-            HapticsAndAudioEngine.shared.playLapComplete(isFinalLap: true)
+            HapticsAndAudioEngine.shared.updateEngineSound(speedRatio: 0, driftTier: 0, boosting: false, active: false)
             let place = (body["place"] as? Int) ?? 1
             let clock = (body["clock"] as? Double) ?? 95.0
             let bestLap = (body["bestLap"] as? Double) ?? (clock / 3.0)
@@ -119,7 +146,7 @@ public final class LollyEngineBridgeController: NSObject, ObservableObject, WKSc
             recordNativeTelemetry(mapId: mapId, place: place, totalTime: clock, bestLap: bestLap, driftBoosts: driftBoosts)
 
         case "openVipModal":
-            HapticsAndAudioEngine.shared.playDriftTierUp(tier: 1)
+            HapticsAndAudioEngine.shared.playSfx(name: "ui")
 
         case "selectVipPlan":
             let plan = (body["plan"] as? String) ?? "annual"
@@ -185,11 +212,20 @@ public final class LollyEngineBridgeController: NSObject, ObservableObject, WKSc
             } else {
                 volume = 0.85
             }
+            let sfxVol: Float
+            if let dSfx = body["sfxVolume"] as? Double {
+                sfxVol = Float(dSfx)
+            } else if let nSfx = body["sfxVolume"] as? NSNumber {
+                sfxVol = nSfx.floatValue
+            } else {
+                sfxVol = -1
+            }
             let muted = (body["muted"] as? Bool) ?? false
             let playing = (body["playing"] as? Bool) ?? true
             HapticsAndAudioEngine.shared.updateMusicPlayback(
                 track: track,
                 volume: volume,
+                sfxVolume: sfxVol,
                 muted: muted,
                 playing: playing
             )
@@ -333,7 +369,7 @@ public struct OriginalLollyLap3DView: UIViewRepresentable {
         wv.navigationDelegate = bridge
 
         bridge.webView = wv
-        let buildVer = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "21"
+        let buildVer = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "30"
         let cacheTypes: Set<String> = [
             WKWebsiteDataTypeDiskCache,
             WKWebsiteDataTypeMemoryCache,
