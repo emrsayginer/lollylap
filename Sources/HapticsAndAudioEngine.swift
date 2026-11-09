@@ -14,11 +14,14 @@ public final class HapticsAndAudioEngine: ObservableObject {
     private var bgMusicPlayer: AVAudioPlayer?
     private var engineLoopPlayer: AVAudioPlayer?
     private var activeSfxPlayers: [AVAudioPlayer] = []
+    private var activeEnginePlayers: [AVAudioPlayer] = []
+    private var lastEngineGrainTime: TimeInterval = 0
     private var sfxWavCache: [String: Data] = [:]
 
     private var currentTrackId: String = "candy"
     private var currentMusicVolume: Float = 0.85
     private var currentSfxVolume: Float = 0.95
+    private var currentEngineVolume: Float = 0.35
     private var isMusicMuted: Bool = false
     private var isMusicPlaying: Bool = true
     private var activeScheduledTrack: String?
@@ -188,6 +191,9 @@ public final class HapticsAndAudioEngine: ObservableObject {
         })
 
         sfxWavCache["engine"] = Self.renderEngineLoopWav()
+        for step in 0...9 {
+            sfxWavCache["engine_step_\(step)"] = Self.renderEngineGrainWav(step: step)
+        }
     }
 
     private static func renderWav(layers: [SynthLayer]) -> Data {
@@ -279,6 +285,58 @@ public final class HapticsAndAudioEngine: ObservableObject {
         return encodeStereoPcm16Wav(left: left, right: right, sampleRate: sampleRate)
     }
 
+    private static func renderEngineGrainWav(step: Int) -> Data {
+        let sampleRate = 44100
+        let sr = Float(sampleRate)
+        let duration: Float = 0.34
+        let totalSamples = Int(duration * sr)
+        var left = [Float](repeating: 0, count: totalSamples)
+        var right = [Float](repeating: 0, count: totalSamples)
+
+        // Warm, cheerful kid-friendly toy-kart purr across 10 speed/boost steps (205 Hz .. 376 Hz)
+        let baseFreq: Float = 205.0 + Float(step) * 19.0
+        let chugRate: Float = 10.5 + Float(step) * 0.55
+        let fadeInSamples = Int(0.065 * sr)
+        let fadeOutSamples = Int(0.075 * sr)
+
+        for i in 0..<totalSamples {
+            let t = Float(i) / sr
+            let chugPhase = 2.0 * Float.pi * chugRate * t
+            let vibrato = 0.18 * sin(chugPhase)
+
+            let p1 = 2.0 * Float.pi * baseFreq * t + vibrato
+            let p2 = 2.0 * Float.pi * (baseFreq * 1.5) * t + vibrato * 1.5
+            let p3 = 2.0 * Float.pi * (baseFreq * 2.0) * t + vibrato * 2.0
+            let p4 = 2.0 * Float.pi * (baseFreq * 3.0) * t + vibrato * 2.5
+
+            let p1Norm = (p1 / (2.0 * Float.pi)).truncatingRemainder(dividingBy: 1.0)
+            let p1Pos = p1Norm < 0 ? p1Norm + 1.0 : p1Norm
+            let tri = 1.0 - 4.0 * abs(round(p1Pos - 0.25) - (p1Pos - 0.25))
+
+            // Playful "pır-pır-pır" toy-kart rhythmic pulse
+            let chugEnv = 0.62 + 0.38 * sin(chugPhase)
+
+            // Smooth raised-cosine window at edges so overlapping grains sum seamlessly without clicks
+            let win: Float
+            if i < fadeInSamples {
+                let x = Float(i) / Float(max(1, fadeInSamples))
+                win = 0.5 * (1.0 - cos(Float.pi * x))
+            } else if i > totalSamples - fadeOutSamples {
+                let rem = totalSamples - i
+                let x = Float(rem) / Float(max(1, fadeOutSamples))
+                win = 0.5 * (1.0 - cos(Float.pi * x))
+            } else {
+                win = 1.0
+            }
+
+            let raw = tri * 0.42 + sin(p1) * 0.20 + sin(p2) * 0.18 + sin(p3) * 0.14 + sin(p4) * 0.06
+            let sig = raw * chugEnv * win * 0.82
+            left[i] = sig * 0.96
+            right[i] = sig
+        }
+        return encodeStereoPcm16Wav(left: left, right: right, sampleRate: sampleRate)
+    }
+
     private static func encodeStereoPcm16Wav(left: [Float], right: [Float], sampleRate: Int) -> Data {
         let frameCount = min(left.count, right.count)
         let dataByteCount = frameCount * 4
@@ -321,7 +379,7 @@ public final class HapticsAndAudioEngine: ObservableObject {
         return data
     }
 
-    public func updateMusicPlayback(track: String, volume: Float, sfxVolume: Float = -1, muted: Bool, playing: Bool) {
+    public func updateMusicPlayback(track: String, volume: Float, sfxVolume: Float = -1, engineVolume: Float = -1, muted: Bool, playing: Bool) {
         let validTrack = Self.validTracks.contains(track) ? track : "candy"
         let trackChanged = validTrack != currentTrackId
         currentTrackId = validTrack
@@ -329,12 +387,19 @@ public final class HapticsAndAudioEngine: ObservableObject {
         if sfxVolume >= 0 {
             currentSfxVolume = max(0, min(1, sfxVolume))
         }
+        if engineVolume >= 0 {
+            currentEngineVolume = max(0, min(1, engineVolume))
+        }
         isMusicMuted = muted
         isMusicPlaying = playing
         soundEnabled = !muted
-        if muted || currentSfxVolume <= 0.001 {
+        if muted || currentEngineVolume <= 0.005 {
             engineLoopPlayer?.volume = 0.0
             engineLoopPlayer?.pause()
+            for p in activeEnginePlayers {
+                p.stop()
+            }
+            activeEnginePlayers.removeAll()
         }
         refreshMusicLoop(forceRestart: trackChanged)
     }
@@ -428,25 +493,69 @@ public final class HapticsAndAudioEngine: ObservableObject {
         }
     }
 
-    public func updateEngineSound(speedRatio: Float, driftTier: Int, boosting: Bool, active: Bool) {
-        guard let engPlayer = engineLoopPlayer else { return }
-        if !active || !soundEnabled || isMusicMuted || currentSfxVolume <= 0.01 {
-            if engPlayer.isPlaying {
+    public func updateEngineSound(speedRatio: Float, driftTier: Int, boosting: Bool, active: Bool, engineVolume: Float = -1) {
+        if engineVolume >= 0 {
+            currentEngineVolume = max(0, min(1, engineVolume))
+        }
+        if !active || !soundEnabled || isMusicMuted || currentEngineVolume <= 0.005 {
+            if let engPlayer = engineLoopPlayer, engPlayer.isPlaying {
                 engPlayer.volume = 0.0
                 engPlayer.pause()
             }
+            for p in activeEnginePlayers {
+                p.stop()
+            }
+            activeEnginePlayers.removeAll()
             return
         }
 
         let clamped = max(0.0, min(1.3, speedRatio))
-        // Kid-friendly playful pitch range and soft, cozy background volume
-        let targetRate = 0.82 + clamped * 0.56 + (boosting ? 0.16 : 0.0) + Float(driftTier) * 0.05
-        let targetVol = (0.065 + clamped * 0.075 + (boosting ? 0.035 : 0.0)) * currentSfxVolume
+        // Scales with the user's Driving Sound setting (default 0.35 = soft, cozy background purr)
+        let driveCurve: Float = 0.48 + clamped * 0.34 + (boosting ? 0.14 : 0.0)
+        let targetVol = min(0.85, max(0.0, driveCurve * currentEngineVolume * 0.72))
 
-        engPlayer.rate = max(0.65, min(1.75, targetRate))
-        engPlayer.volume = max(0.0, min(0.22, targetVol))
-        if !engPlayer.isPlaying {
-            engPlayer.play()
+        activeEnginePlayers.removeAll { !$0.isPlaying }
+        for p in activeEnginePlayers {
+            p.volume = targetVol
+        }
+
+        let now = CACurrentMediaTime()
+        if now - lastEngineGrainTime >= 0.155 {
+            lastEngineGrainTime = now
+            let step = max(0, min(9, Int(round(clamped * 6.0)) + driftTier + (boosting ? 2 : 0)))
+            if let wavData = sfxWavCache["engine_step_\(step)"] ?? sfxWavCache["engine"] {
+                try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
+                try? AVAudioSession.sharedInstance().setActive(true)
+                if activeEnginePlayers.count > 4 {
+                    activeEnginePlayers.first?.stop()
+                    activeEnginePlayers.removeFirst()
+                }
+                if let player = try? AVAudioPlayer(data: wavData) {
+                    player.volume = targetVol
+                    player.prepareToPlay()
+                    player.play()
+                    activeEnginePlayers.append(player)
+                }
+            }
+        }
+    }
+
+    public func previewEngineSound(engineVolume: Float) {
+        currentEngineVolume = max(0, min(1, engineVolume))
+        guard soundEnabled, !isMusicMuted, currentEngineVolume > 0.005 else { return }
+        let now = CACurrentMediaTime()
+        guard now - lastEngineGrainTime >= 0.13 else { return }
+        lastEngineGrainTime = now
+        guard let wavData = sfxWavCache["engine_step_4"] else { return }
+
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
+        try? AVAudioSession.sharedInstance().setActive(true)
+        let previewVol = min(0.85, max(0.02, 0.72 * currentEngineVolume * 0.72))
+        if let player = try? AVAudioPlayer(data: wavData) {
+            player.volume = previewVol
+            player.prepareToPlay()
+            player.play()
+            activeEnginePlayers.append(player)
         }
     }
 

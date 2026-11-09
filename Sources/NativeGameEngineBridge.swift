@@ -106,6 +106,14 @@ public final class LollyEngineBridgeController: NSObject, ObservableObject, WKSc
             } else {
                 speedRatio = 0.0
             }
+            let engVol: Float
+            if let d = body["engineVolume"] as? Double {
+                engVol = Float(d)
+            } else if let n = body["engineVolume"] as? NSNumber {
+                engVol = n.floatValue
+            } else {
+                engVol = -1
+            }
             let driftTier = (body["driftTier"] as? Int) ?? 0
             let boosting = (body["boosting"] as? Bool) ?? false
             let active = (body["active"] as? Bool) ?? false
@@ -113,8 +121,20 @@ public final class LollyEngineBridgeController: NSObject, ObservableObject, WKSc
                 speedRatio: speedRatio,
                 driftTier: driftTier,
                 boosting: boosting,
-                active: active
+                active: active,
+                engineVolume: engVol
             )
+
+        case "enginePreview":
+            let engVol: Float
+            if let d = body["engineVolume"] as? Double {
+                engVol = Float(d)
+            } else if let n = body["engineVolume"] as? NSNumber {
+                engVol = n.floatValue
+            } else {
+                engVol = 0.35
+            }
+            HapticsAndAudioEngine.shared.previewEngineSound(engineVolume: engVol)
 
         case "raceStart":
             isInActiveRace = true
@@ -220,12 +240,21 @@ public final class LollyEngineBridgeController: NSObject, ObservableObject, WKSc
             } else {
                 sfxVol = -1
             }
+            let engVol: Float
+            if let dEng = body["engineVolume"] as? Double {
+                engVol = Float(dEng)
+            } else if let nEng = body["engineVolume"] as? NSNumber {
+                engVol = nEng.floatValue
+            } else {
+                engVol = -1
+            }
             let muted = (body["muted"] as? Bool) ?? false
             let playing = (body["playing"] as? Bool) ?? true
             HapticsAndAudioEngine.shared.updateMusicPlayback(
                 track: track,
                 volume: volume,
                 sfxVolume: sfxVol,
+                engineVolume: engVol,
                 muted: muted,
                 playing: playing
             )
