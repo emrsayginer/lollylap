@@ -250,19 +250,29 @@ public final class HapticsAndAudioEngine: ObservableObject {
     private static func renderEngineLoopWav() -> Data {
         let sampleRate = 44100
         let sr = Float(sampleRate)
-        // Exact integer cycle count at 100 Hz (441 samples per cycle * 100 cycles = 44100 samples) for click-free looping
+        // Cute, kid-friendly toy-kart / candy-cruiser purr:
+        // Warm mid-register (220 Hz + 330 Hz fifth + 440 Hz soft octave) with a playful 10 Hz bubbly "putt-putt" pulse.
+        // All frequencies are exact integer cycles per 1.0s buffer for seamless click-free looping.
         let totalSamples = sampleRate
         var left = [Float](repeating: 0, count: totalSamples)
         var right = [Float](repeating: 0, count: totalSamples)
-        let baseFreq: Float = 100.0
+        let baseFreq: Float = 220.0
 
         for i in 0..<totalSamples {
             let t = Float(i) / sr
-            let p1 = 2.0 * Float.pi * baseFreq * t
-            let p2 = 2.0 * Float.pi * (baseFreq * 1.5) * t
-            let p3 = 2.0 * Float.pi * (baseFreq * 2.0) * t
-            let mod = 0.90 + 0.10 * sin(2.0 * Float.pi * 12.0 * t)
-            let sig = (sin(p1) * 0.58 + sin(p2) * 0.27 + sin(p3) * 0.15) * mod * 0.45
+            let chugPhase = 2.0 * Float.pi * 10.0 * t
+            let bubbleBounce = 0.16 * sin(chugPhase)
+            let p1 = 2.0 * Float.pi * baseFreq * t + bubbleBounce
+            let p2 = 2.0 * Float.pi * (baseFreq * 1.5) * t + bubbleBounce * 1.5
+            let p3 = 2.0 * Float.pi * (baseFreq * 2.0) * t + bubbleBounce * 2.0
+
+            // Rounded triangle-like fundamental + warm fifth + gentle octave
+            let p1Norm = (p1 / (2.0 * Float.pi)).truncatingRemainder(dividingBy: 1.0)
+            let p1Pos = p1Norm < 0 ? p1Norm + 1.0 : p1Norm
+            let tri = 1.0 - 4.0 * abs(round(p1Pos - 0.25) - (p1Pos - 0.25))
+
+            let chugEnv = 0.78 + 0.22 * sin(chugPhase)
+            let sig = (tri * 0.48 + sin(p1) * 0.24 + sin(p2) * 0.18 + sin(p3) * 0.10) * chugEnv * 0.36
             left[i] = sig
             right[i] = sig
         }
@@ -429,11 +439,12 @@ public final class HapticsAndAudioEngine: ObservableObject {
         }
 
         let clamped = max(0.0, min(1.3, speedRatio))
-        let targetRate = 0.72 + clamped * 0.72 + (boosting ? 0.22 : 0.0) + Float(driftTier) * 0.06
-        let targetVol = (0.10 + clamped * 0.12 + (boosting ? 0.06 : 0.0)) * currentSfxVolume
+        // Kid-friendly playful pitch range and soft, cozy background volume
+        let targetRate = 0.82 + clamped * 0.56 + (boosting ? 0.16 : 0.0) + Float(driftTier) * 0.05
+        let targetVol = (0.065 + clamped * 0.075 + (boosting ? 0.035 : 0.0)) * currentSfxVolume
 
-        engPlayer.rate = max(0.5, min(2.0, targetRate))
-        engPlayer.volume = max(0.0, min(0.45, targetVol))
+        engPlayer.rate = max(0.65, min(1.75, targetRate))
+        engPlayer.volume = max(0.0, min(0.22, targetVol))
         if !engPlayer.isPlaying {
             engPlayer.play()
         }

@@ -213,6 +213,7 @@ public final class RaceSimulationEngine: NSObject, ObservableObject {
         displayLink?.invalidate()
         displayLink = nil
         motionManager.stopDeviceMotionUpdates()
+        HapticsAndAudioEngine.shared.updateEngineSound(speedRatio: 0, driftTier: 0, boosting: false, active: false)
     }
 
     private func startSensorsIfNeeded() {
@@ -280,7 +281,10 @@ public final class RaceSimulationEngine: NSObject, ObservableObject {
         let rawDt = Float(max(0.001, min(0.05, now - lastTimestamp)))
         lastTimestamp = now
 
-        guard !isPaused && !isRaceFinished else { return }
+        guard !isPaused && !isRaceFinished else {
+            HapticsAndAudioEngine.shared.updateEngineSound(speedRatio: 0, driftTier: 0, boosting: false, active: false)
+            return
+        }
 
         // Countdown Sequence
         if countdownTimer > 0 {
@@ -298,6 +302,7 @@ public final class RaceSimulationEngine: NSObject, ObservableObject {
                     HapticsAndAudioEngine.shared.playCountdownTick(finalGo: true)
                 }
             }
+            HapticsAndAudioEngine.shared.updateEngineSound(speedRatio: 0.12, driftTier: 0, boosting: false, active: true)
             updateKartTransforms(dt: rawDt)
             return
         } else if countdownText == "GO!" && elapsedSeconds > 0.8 {
@@ -399,6 +404,12 @@ public final class RaceSimulationEngine: NSObject, ObservableObject {
         let currentKmh = Double(player.speedMetersPerSec * 3.45)
         speedKmh = Int(round(currentKmh))
         peakSpeedRecorded = max(peakSpeedRecorded, currentKmh)
+        HapticsAndAudioEngine.shared.updateEngineSound(
+            speedRatio: player.speedMetersPerSec / max(1.0, baseTopSpeed),
+            driftTier: driftTier,
+            boosting: boostActive,
+            active: true
+        )
 
         // Record Apple Charts Telemetry Sample every 2% of lap
         let lapFraction = Double( max(0, player.totalProgress).truncatingRemainder(dividingBy: 1.0) )
@@ -512,6 +523,7 @@ public final class RaceSimulationEngine: NSObject, ObservableObject {
             if sector3Split == 0 { sector3Split = bestLapSeconds * 0.33 }
 
             isRaceFinished = true
+            HapticsAndAudioEngine.shared.updateEngineSound(speedRatio: 0, driftTier: 0, boosting: false, active: false)
             HapticsAndAudioEngine.shared.playLapComplete(isFinalLap: true)
 
             let record = LapTelemetryRecord(
